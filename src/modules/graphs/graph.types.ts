@@ -18,9 +18,14 @@ export interface NodeRecord {
 export interface EdgeRecord {
   from: string;
   to: string;
+  /** Unknown fields from the uploaded edge entry, kept as-is. */
+  extra: JsonObject | null;
 }
 
+/** The content of an uploaded graph file. */
 export interface GraphData {
+  /** Unknown top-level fields of the uploaded file, kept as-is. */
+  extra: JsonObject | null;
   nodes: NodeRecord[];
   edges: EdgeRecord[];
 }

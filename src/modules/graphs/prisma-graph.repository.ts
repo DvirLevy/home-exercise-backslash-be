@@ -1,7 +1,9 @@
 import { ConflictError, NotFoundError } from '../../http/errors';
+import type { JsonObject } from '../../shared/json';
 import { Prisma, type DbClient, type PrismaClient } from '../../infrastructure/prisma';
 import type { GraphRepository } from './graph.repository';
 import {
+  nullableJson,
   toEdgeCreateInput,
   toEdgeRecord,
   toGraphSummary,
@@ -39,8 +41,8 @@ function* batches<T>(items: readonly T[], size: number): Generator<T[]> {
 export class PrismaGraphRepository implements GraphRepository {
   constructor(private readonly db: DbClient) {}
 
-  async create({ name, nodes, edges }: NewGraph): Promise<GraphSummary> {
-    const graph = await this.db.graph.create({ data: { name } });
+  async create({ name, extra, nodes, edges }: NewGraph): Promise<GraphSummary> {
+    const graph = await this.db.graph.create({ data: { name, extra: nullableJson(extra) } });
     await this.insertData(graph.id, { nodes, edges });
     return {
       id: graph.id,
@@ -110,6 +112,12 @@ export class PrismaGraphRepository implements GraphRepository {
   }
 
   async replaceData(id: string, data: GraphData): Promise<void> {
+    try {
+      await this.db.graph.update({ where: { id }, data: { extra: nullableJson(data.extra) } });
+    } catch (err) {
+      if (isRecordNotFound(err)) throw graphNotFound();
+      throw err;
+    }
     // Deleting nodes cascades to their edges.
     await this.db.node.deleteMany({ where: { graphId: id } });
     await this.insertData(id, data);
@@ -136,13 +144,14 @@ export class PrismaGraphRepository implements GraphRepository {
       id: graph.id,
       name: graph.name,
       version: graph.version,
+      extra: graph.extra as JsonObject | null,
       nodes: nodes.map(toNodeRecord),
       edges: edges.map(toEdgeRecord),
     };
   }
 
   /** Nodes first, so the edges' foreign keys can resolve. Positions follow the array order. */
-  private async insertData(graphId: string, { nodes, edges }: GraphData): Promise<void> {
+  private async insertData(graphId: string, { nodes, edges }: Pick<GraphData, 'nodes' | 'edges'>): Promise<void> {
     let position = 0;
     for (const batch of batches(nodes, NODE_BATCH_SIZE)) {
       await this.db.node.createMany({ data: batch.map((node) => toNodeCreateInput(graphId, node, position++)) });

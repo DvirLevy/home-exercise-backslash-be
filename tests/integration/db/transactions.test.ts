@@ -10,7 +10,7 @@ import { createTestPrisma, resetDatabase } from '../../helpers/test-database';
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function dataNamed(...names: string[]): GraphData {
-  return { nodes: names.map((n) => serviceNode(n)), edges: names.slice(1).map((n, i) => edge(names[i]!, n)) };
+  return { extra: null, nodes: names.map((n) => serviceNode(n)), edges: names.slice(1).map((n, i) => edge(names[i]!, n)) };
 }
 
 describe('transactions and optimistic locking', () => {
@@ -94,7 +94,7 @@ describe('transactions and optimistic locking', () => {
     });
 
     it('leaves the old data and the old version when the replace fails partway', async () => {
-      const broken: GraphData = { nodes: [serviceNode('only')], edges: [edge('only', 'missing')] };
+      const broken: GraphData = { extra: null, nodes: [serviceNode('only')], edges: [edge('only', 'missing')] };
 
       await expect(replace(broken)).rejects.toThrow();
 
@@ -102,6 +102,16 @@ describe('transactions and optimistic locking', () => {
       expect(stored?.version).toBe(1);
       expect(stored?.nodes).toEqual(sampleGraphData().nodes);
       expect(stored?.edges).toHaveLength(4);
+    });
+
+    it('also restores the old unknown fields when a replace fails partway', async () => {
+      const broken: GraphData = { extra: { shouldNotStick: true }, nodes: [serviceNode('only')], edges: [edge('only', 'missing', { x: 1 })] };
+
+      await expect(replace(broken)).rejects.toThrow();
+
+      const stored = await graphs.findWithData(graphId);
+      expect(stored?.extra).toEqual({ source: 'builders', revision: 3 });
+      expect(stored?.edges.find((e) => e.to === 'db')?.extra).toEqual({ latencyMs: 12, tags: ['sync'] });
     });
 
     it('leaves the old data when the callback throws after the replace succeeded', async () => {

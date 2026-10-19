@@ -16,6 +16,8 @@ model Graph {
   name      String
   /// Bumped on every write that can change query results; also the optimistic-lock token.
   version   Int      @default(1)
+  /// Unknown top-level fields from the uploaded file, preserved as-is.
+  extra     Json?
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -54,6 +56,8 @@ model Edge {
   graphId  String @map("graph_id") @db.Uuid
   fromName String @map("from_name")
   toName   String @map("to_name")
+  /// Unknown fields from the uploaded edge entry, preserved as-is.
+  extra    Json?
 
   graph Graph @relation(fields: [graphId], references: [id], onDelete: Cascade)
   from  Node  @relation("EdgeFrom", fields: [graphId, fromName], references: [graphId, name], onDelete: Cascade)

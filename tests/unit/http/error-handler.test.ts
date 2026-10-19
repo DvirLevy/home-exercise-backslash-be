@@ -47,6 +47,16 @@ describe('toHttpError', () => {
     );
   });
 
+  it('caps the details of a ZodError and says how many issues there were', () => {
+    const parsed = z.array(z.number()).safeParse(Array.from({ length: 250 }, () => 'x'));
+    if (parsed.success) throw new Error('expected a validation failure');
+
+    const { body } = toHttpError(parsed.error);
+
+    expect(body.error.details).toHaveLength(100);
+    expect(body.error.message).toBe('Request validation failed (showing the first 100 of 250 issues)');
+  });
+
   it('maps body-parser errors', () => {
     expect(toHttpError({ type: 'entity.parse.failed', status: 400 })).toMatchObject({
       status: 400,

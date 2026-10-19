@@ -187,6 +187,32 @@ describe('database constraints', () => {
     });
   });
 
+  describe('extra (the unknown fields of an upload)', () => {
+    const asEdge = async (extra: unknown) => {
+      await addNode('a');
+      return prisma.edge.create({ data: { graphId, fromName: 'a', toName: 'a', extra: extra as never } });
+    };
+
+    it.each([
+      ['an array', []],
+      ['a string', 'x'],
+      ['a number', 1],
+      ['a boolean', true],
+    ])('rejects %s on a graph, a node and an edge', async (_label, extra) => {
+      await expectConstraintViolation(prisma.graph.create({ data: { name: 'x', extra: extra as never } }), 'graphs_extra_object_check');
+      await expectConstraintViolation(addNode('n', { extra }), 'nodes_extra_object_check');
+      await expectConstraintViolation(asEdge(extra), 'edges_extra_object_check');
+    });
+
+    it('accepts an object, an empty object and SQL NULL on a graph, a node and an edge', async () => {
+      await expect(prisma.graph.create({ data: { name: 'obj', extra: { a: 1 } } })).resolves.toBeDefined();
+      await expect(prisma.graph.create({ data: { name: 'empty', extra: {} } })).resolves.toBeDefined();
+      await expect(prisma.graph.create({ data: { name: 'null' } })).resolves.toMatchObject({ extra: null });
+      await expect(addNode('n', { extra: { a: [1] } })).resolves.toBeDefined();
+      await expect(asEdge({ weight: 3 })).resolves.toMatchObject({ extra: { weight: 3 } });
+    });
+  });
+
   describe('graph_filters', () => {
     const addFilter = (key: string, data: Record<string, unknown> = {}) =>
       prisma.graphFilter.create({ data: { graphId, key, definition: {}, ...data } });

@@ -32,11 +32,11 @@ export function toNodeRecord(node: Node): NodeRecord {
 }
 
 export function toEdgeRecord(edge: Edge): EdgeRecord {
-  return { from: edge.fromName, to: edge.toName };
+  return { from: edge.fromName, to: edge.toName, extra: edge.extra as JsonObject | null };
 }
 
 /** A nullable JSON column needs `DbNull` to store SQL NULL; a plain `null` would mean JSON null. */
-function nullableJson(value: JsonObject | null): Prisma.InputJsonValue | typeof Prisma.DbNull {
+export function nullableJson(value: JsonObject | null): Prisma.InputJsonValue | typeof Prisma.DbNull {
   return value === null ? Prisma.DbNull : (value as Prisma.InputJsonValue);
 }
 
@@ -57,5 +57,5 @@ export function toNodeCreateInput(graphId: string, node: NodeRecord, position: n
 }
 
 export function toEdgeCreateInput(graphId: string, edge: EdgeRecord): Prisma.EdgeCreateManyInput {
-  return { graphId, fromName: edge.from, toName: edge.to };
+  return { graphId, fromName: edge.from, toName: edge.to, extra: nullableJson(edge.extra) };
 }
