@@ -1,5 +1,3 @@
-// Models are added in Task 2 (data layer).
-
 generator client {
   provider     = "prisma-client"
   output       = "../src/generated/prisma"
@@ -8,4 +6,78 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// CHECK constraints cannot be expressed in this file. They are hand-written in the
+// migration SQL (see prisma/migrations/*_init) and exercised by tests/integration/db.
+
+model Graph {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  /// Bumped on every write that can change query results; also the optimistic-lock token.
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  nodes   Node[]
+  edges   Edge[]
+  filters GraphFilter[]
+
+  @@map("graphs")
+}
+
+model Node {
+  graphId         String   @map("graph_id") @db.Uuid
+  name            String
+  /// Order of the node in the uploaded file, so reads are deterministic.
+  position        Int
+  kind            String?
+  language        String?
+  path            String?
+  publicExposed   Boolean? @map("public_exposed")
+  isPlaceholder   Boolean  @default(false) @map("is_placeholder")
+  vulnerabilities Json     @default("[]")
+  metadata        Json?
+  /// Unknown fields from the uploaded file, preserved as-is.
+  extra           Json?
+
+  graph    Graph  @relation(fields: [graphId], references: [id], onDelete: Cascade)
+  outgoing Edge[] @relation("EdgeFrom")
+  incoming Edge[] @relation("EdgeTo")
+
+  @@id([graphId, name])
+  @@index([graphId, position])
+  @@map("nodes")
+}
+
+model Edge {
+  graphId  String @map("graph_id") @db.Uuid
+  fromName String @map("from_name")
+  toName   String @map("to_name")
+
+  graph Graph @relation(fields: [graphId], references: [id], onDelete: Cascade)
+  from  Node  @relation("EdgeFrom", fields: [graphId, fromName], references: [graphId, name], onDelete: Cascade)
+  to    Node  @relation("EdgeTo", fields: [graphId, toName], references: [graphId, name], onDelete: Cascade)
+
+  @@id([graphId, fromName, toName])
+  @@index([graphId, toName])
+  @@map("edges")
+}
+
+model GraphFilter {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  graphId           String   @map("graph_id") @db.Uuid
+  key               String
+  description       String?
+  /// Declarative rule tree; format version is tracked in definitionVersion.
+  definition        Json
+  definitionVersion Int      @default(1) @map("definition_version")
+  isBuiltin         Boolean  @default(false) @map("is_builtin")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  graph Graph @relation(fields: [graphId], references: [id], onDelete: Cascade)
+
+  @@unique([graphId, key])
+  @@map("graph_filters")
 }
