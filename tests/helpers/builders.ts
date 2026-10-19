@@ -20,13 +20,14 @@ export function placeholderNode(name: string): NodeRecord {
   return serviceNode(name, { kind: null, isPlaceholder: true });
 }
 
-export function edge(from: string, to: string): EdgeRecord {
-  return { from, to };
+export function edge(from: string, to: string, extra: EdgeRecord['extra'] = null): EdgeRecord {
+  return { from, to, extra };
 }
 
 /**
  * Small graph covering the stored shapes: a public service, a service with a vulnerability and
- * unknown extra fields, a database with metadata, a placeholder and a self-loop.
+ * unknown extra fields, a database with metadata, a placeholder, a self-loop, an edge with unknown
+ * fields, and unknown top-level fields.
  * Names are deliberately not in alphabetical order so tests can prove file order is kept.
  */
 export function sampleGraphData(): GraphData {
@@ -42,7 +43,8 @@ export function sampleGraphData(): GraphData {
       serviceNode('db', { kind: 'rds', metadata: { cloud: 'AWS', engine: 'postgres', version: '9.6' } }),
       placeholderNode('ghost'),
     ],
-    edges: [edge('web', 'api'), edge('api', 'db'), edge('api', 'ghost'), edge('api', 'api')],
+    edges: [edge('web', 'api'), edge('api', 'db', { latencyMs: 12, tags: ['sync'] }), edge('api', 'ghost'), edge('api', 'api')],
+    extra: { source: 'builders', revision: 3 },
   };
 }
 

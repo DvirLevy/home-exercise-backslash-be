@@ -9,7 +9,7 @@ Backend for the Backslash Security home assignment: a graph analysis platform. U
 ## Working rules (set by the user)
 
 - **Never run `git commit`** or anything that creates commits. The repo was `git init`-ed only.
-- Work is split into **5 gated tasks**; implement only the approved one, then stop for review. A task is done when its tests pass, `npm run typecheck` is clean, and earlier tests still pass. Status: Task 1 (foundation) and Task 2 (data layer) done; 3 ingestion + graph CRUD, 4 graph engine + rule language, 5 filters/routes API + docs are pending.
+- Work is split into **5 gated tasks**; implement only the approved one, then stop for review. A task is done when its tests pass, `npm run typecheck` is clean, and earlier tests still pass. Status: Tasks 1 (foundation), 2 (data layer) and 3 (ingestion + graph CRUD) done; 4 graph engine + rule language and 5 filters/routes API + docs are pending.
 - **Single `.env` file only** (no `.env.example`, no other env file names). Document variables in the README instead.
 - **All tests live under `tests/`**, never next to source. kebab-case file names; repository interface and Prisma implementation in separate files.
 - Don't add dependencies without explaining why.
@@ -44,12 +44,25 @@ Request flow: `router -> controller -> service -> repository (interface) <- pris
 ### Data layer (Task 2, implemented)
 
 - Repositories: `GraphRepository` / `FilterRepository` interfaces with `Prisma*` implementations that take a `DbClient` (root client or transaction client). Write flows use `UnitOfWork` (`src/modules/unit-of-work.ts`): `unitOfWork.run(({ graphs, filters }) => ...)` gives repositories bound to one transaction. Services (Task 3+) must call `graphs.bumpVersion(id, ifMatch?)` **first** in every write transaction (it is the row lock and the optimistic-lock check), then write, then drop the cache after commit.
-- Not wired into `container.ts` yet; Task 3 adds the graph/filter services and wiring.
 - `findWithData` reads graph + nodes + edges in a REPEATABLE READ transaction for a consistent snapshot. Edges come back sorted by (from, to); nodes by `position`.
 - `src/infrastructure/prisma.ts` understands `?schema=` in `DATABASE_URL` (sets both the adapter `schema` and `search_path`, so raw SQL and generated queries agree).
 - Error mapping lives in the repositories: unknown graph/filter -> `NotFoundError` (`GRAPH_NOT_FOUND`, `FILTER_NOT_FOUND`), stale version -> `ConflictError('VERSION_CONFLICT')`, duplicate filter key -> `FILTER_KEY_EXISTS`. Integrity violations of graph data (bad edge, CHECK failures) deliberately surface as raw Prisma errors; services must validate first.
 
-### Planned design (agreed; follow when building Tasks 3-5)
+### Graph ingestion and CRUD (Task 3, implemented)
+
+- Flow: `graph.router` -> `graphFileUpload` (Multer, memory) -> `validate()` -> `GraphController` -> `GraphService` -> `parseJsonBuffer` / `GraphFileSchema` / `normalizeGraph` -> repositories. The controller only decodes the uploaded bytes (`ingestion/upload-parser.ts`); the service validates and normalizes **before** opening a transaction, so bad uploads never take a lock.
+- **Unknown fields are preserved at every level** (decision: "preserve unknown fields at all levels"): `graphs.extra`, `nodes.extra`, `edges.extra` (jsonb objects, CHECK-constrained), plus vulnerabilities and `metadata` kept whole. `parseGraphFile()` (`graph-file.schema.ts`) uses Zod only to VALIDATE (output discarded) and then reads the preserved data from the validated RAW json, because Zod's output silently drops a `__proto__` key. Do not switch back to using Zod's parsed output for extras.
+- Edge entries: unknown fields are copied to each expanded edge (own copy); duplicate edges merge their extras (later wins). `GraphData` = `{extra, nodes, edges}`; `replaceData` replaces the graph-level extra too. API: graph detail has `extra` (nullable); an edge has `extra` only when non-null.
+- **`__proto__` keys are refused** by `parseJsonBuffer` (400): Prisma's JSON serialization silently drops that key at any depth (verified: PostgreSQL stored `{"keep":1}`), so storing would lose data silently. All other awkward keys round-trip (tested). jsonb does not preserve object key order.
+- Vulnerability fields are all optional/free-form on purpose: the sample file does not define which are required.
+- `normalizeGraph` splits `to`, dedupes edges, creates placeholders (appended after defined nodes, in first-reference order), rejects duplicate names (`DUPLICATE_NODE_NAME`), enforces `MAX_NODES`/`MAX_EDGES` (413). `parseJsonBuffer` rejects NUL characters (PostgreSQL cannot store them).
+- Responses: node JSON is `{name, kind, language, path, publicExposed, placeholder, vulnerabilities, metadata, extra}` (unknown upload fields stay nested under `extra`); edges are `{from, to}`. ETag is the quoted version (`"3"`); `If-Match` accepts `3`, `"3"`, `W/"3"`, `*`.
+- New graphs get the built-in filters from `modules/filters/builtin-filters.ts` (rule-language JSON; the rule schema/compiler arrives in Task 4). They are inserted in the same transaction as the graph.
+- Cache: `GraphService` depends on the `GraphCache` port (`invalidate(id)`), currently `noopGraphCache`; Task 4's `GraphStore` should implement it and be passed as `graphCache` to `createServices`/`wireApp`. Invalidation happens only after a committed `replace` or `delete` (not on rename or failures).
+- Content is always validated regardless of declared file type/name (name/type only decides 415 vs parsing). Wiring: `createServices()` (used by the seed script too) and `wireApp()` live in `container.ts`; `buildPrismaPersistence(prisma)` builds the real repositories + unit of work. `npm run seed` loads `fixtures/train-ticket-be.json` (46 defined nodes + placeholder `assurance-service` = 47 nodes, 98 edges).
+- Test helpers: `createDatabaseTestApp(prisma, opts)` is the real app on the test schema; `createTestApp()` uses stubs that throw if graph storage is touched; `tests/helpers/fakes.ts` has jest-mock repositories and a fake unit of work; `tests/helpers/api.ts` has `uploadGraph`/`replaceGraph` (`name: undefined` omits the field).
+
+### Planned design (agreed; follow when building Tasks 4-5)
 
 - **Schema:** `graphs` (uuid, name, `version` int, timestamps), `nodes` (PK `(graph_id, name)`, `position`, `kind`, `language`, `path`, `public_exposed` nullable bool, `is_placeholder`, `vulnerabilities` jsonb array, `metadata` jsonb, `extra` jsonb for unknown fields), `edges` (PK `(graph_id, from_name, to_name)`, composite FKs to nodes, cascade), `graph_filters` (per graph, unique `(graph_id, key)`, jsonb `definition`, `is_builtin`). `CHECK` constraints are hand-written in migrations (`prisma migrate dev --create-only`).
 - **Writes:** every data-changing write is one transaction whose first statement is `UPDATE graphs SET version = version + 1 ... WHERE id = $id [AND version = $ifMatch] RETURNING version` (locks the row, enforces `If-Match`, bumps version). Filter changes bump version too; renames do not. The in-memory cache entry is dropped only after commit.

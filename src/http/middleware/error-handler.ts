@@ -11,6 +11,9 @@ export interface ErrorBody {
   };
 }
 
+/** A badly broken file can produce thousands of issues; the first ones are enough to fix it. */
+const MAX_VALIDATION_DETAILS = 100;
+
 interface HttpErrorShape {
   status: number;
   body: ErrorBody;
@@ -29,13 +32,19 @@ export function toHttpError(err: unknown): HttpErrorShape {
   }
 
   if (err instanceof ZodError) {
+    const total = err.issues.length;
     return {
       status: 400,
       body: {
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Request validation failed',
-          details: err.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
+          message:
+            total > MAX_VALIDATION_DETAILS
+              ? `Request validation failed (showing the first ${MAX_VALIDATION_DETAILS} of ${total} issues)`
+              : 'Request validation failed',
+          details: err.issues
+            .slice(0, MAX_VALIDATION_DETAILS)
+            .map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
         },
       },
     };

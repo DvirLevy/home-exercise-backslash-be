@@ -37,6 +37,7 @@ describe('PrismaGraphRepository', () => {
 
       const stored = await graphs.findWithData(id);
 
+      expect(stored?.extra).toEqual({ source: 'builders', revision: 3 });
       expect(stored?.nodes.map((n) => n.name)).toEqual(['web', 'api', 'db', 'ghost']);
       expect(stored?.nodes).toEqual(sampleGraphData().nodes);
     });
@@ -46,12 +47,18 @@ describe('PrismaGraphRepository', () => {
 
       const stored = await graphs.findWithData(id);
 
-      expect(stored?.edges).toEqual([edge('api', 'api'), edge('api', 'db'), edge('api', 'ghost'), edge('web', 'api')]);
+      expect(stored?.edges).toEqual([
+        edge('api', 'api'),
+        edge('api', 'db', { latencyMs: 12, tags: ['sync'] }),
+        edge('api', 'ghost'),
+        edge('web', 'api'),
+      ]);
     });
 
     it('distinguishes SQL NULL from empty values', async () => {
       const { id } = await graphs.create({
         name: 'nulls',
+        extra: null,
         nodes: [serviceNode('a', { metadata: {}, extra: {}, publicExposed: false }), serviceNode('b')],
         edges: [],
       });
@@ -65,6 +72,7 @@ describe('PrismaGraphRepository', () => {
     it('keeps a node order that differs from alphabetical order', async () => {
       const { id } = await graphs.create({
         name: 'order',
+        extra: null,
         nodes: ['zeta', 'alpha', 'mid'].map((n) => serviceNode(n)),
         edges: [],
       });
@@ -73,7 +81,7 @@ describe('PrismaGraphRepository', () => {
     });
 
     it('stores a graph without nodes or edges', async () => {
-      const { id } = await graphs.create({ name: 'empty', nodes: [], edges: [] });
+      const { id } = await graphs.create({ name: 'empty', extra: null, nodes: [], edges: [] });
 
       expect(await graphs.findWithData(id)).toMatchObject({ nodes: [], edges: [], version: 1 });
     });
@@ -85,7 +93,7 @@ describe('PrismaGraphRepository', () => {
 
     it('rejects an edge to a node that is not in the graph', async () => {
       await expect(
-        graphs.create({ name: 'bad', nodes: [serviceNode('a')], edges: [edge('a', 'nowhere')] }),
+        graphs.create({ name: 'bad', extra: null, nodes: [serviceNode('a')], edges: [edge('a', 'nowhere')] }),
       ).rejects.toThrow();
     });
 
@@ -96,7 +104,7 @@ describe('PrismaGraphRepository', () => {
       const edges = Array.from({ length: edgeCount }, (_, i) => edge(`n${i % nodeCount}`, `n${(i * 7 + 1 + Math.floor(i / nodeCount)) % nodeCount}`));
       const unique = [...new Map(edges.map((e) => [`${e.from}>${e.to}`, e])).values()];
 
-      const summary = await graphs.create({ name: 'big', nodes, edges: unique });
+      const summary = await graphs.create({ name: 'big', extra: null, nodes, edges: unique });
       const stored = await graphs.findWithData(summary.id);
 
       expect(summary).toMatchObject({ nodeCount, edgeCount: unique.length });
@@ -107,6 +115,109 @@ describe('PrismaGraphRepository', () => {
     }, 60_000);
   });
 
+  describe('unknown fields', () => {
+    const awkward = { nested: { list: [1, { deep: true }, null, 'x', false, 0, ''] }, empty: {}, unicode: 'שלום ü', nil: null };
+
+    it('are stored and read back at the graph, node and edge level', async () => {
+      const { id } = await graphs.create({
+        name: 'extras',
+        extra: { title: 'Train', ...awkward },
+        nodes: [serviceNode('a', { extra: { owner: 'team', ...awkward } }), serviceNode('b')],
+        edges: [edge('a', 'b', { protocol: 'grpc', ...awkward }), edge('b', 'a')],
+      });
+
+      const stored = await graphs.findWithData(id);
+
+      expect(stored?.extra).toEqual({ title: 'Train', ...awkward });
+      expect(stored?.nodes[0]?.extra).toEqual({ owner: 'team', ...awkward });
+      expect(stored?.nodes[1]?.extra).toBeNull();
+      expect(stored?.edges).toEqual([edge('a', 'b', { protocol: 'grpc', ...awkward }), edge('b', 'a')]);
+    });
+
+    it('distinguish "none" (SQL NULL) from an empty object', async () => {
+      const { id } = await graphs.create({
+        name: 'empty-vs-none',
+        extra: {},
+        nodes: [serviceNode('a', { extra: {} }), serviceNode('b')],
+        edges: [edge('a', 'b', {})],
+      });
+
+      const stored = await graphs.findWithData(id);
+
+      expect(stored?.extra).toEqual({});
+      expect(stored?.nodes.map((n) => n.extra)).toEqual([{}, null]);
+      expect(stored?.edges[0]?.extra).toEqual({});
+    });
+
+    it('survive keys that are special in JavaScript or unusual in JSON, at every level, through PostgreSQL', async () => {
+      const awkwardKeys = () =>
+        JSON.parse(
+          '{"constructor":1,"prototype":2,"toString":3,"hasOwnProperty":4,"valueOf":5,' +
+            '"__proto":6,"proto__":7,"__PROTO__":8,"":9,"with space":10,"dotted.key":11,"ключ":12,"emoji-😀":13,"$ref":14}',
+        );
+      const { id } = await graphs.create({
+        name: 'awkward-keys',
+        extra: awkwardKeys(),
+        nodes: [serviceNode('a', { extra: awkwardKeys(), vulnerabilities: [awkwardKeys()], metadata: awkwardKeys() })],
+        edges: [edge('a', 'a', awkwardKeys())],
+      });
+
+      const stored = await graphs.findWithData(id);
+
+      for (const value of [
+        stored?.extra,
+        stored?.nodes[0]?.extra,
+        stored?.nodes[0]?.vulnerabilities[0],
+        stored?.nodes[0]?.metadata,
+        stored?.edges[0]?.extra,
+      ]) {
+        expect(value).toEqual(awkwardKeys());
+        expect(Object.keys(value as object)).toHaveLength(14);
+        expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+      }
+    });
+
+    it('are replaced, or cleared, together with the data', async () => {
+      const { id } = await graphs.create({
+        name: 'swap',
+        extra: { old: true },
+        nodes: [serviceNode('a', { extra: { old: 1 } })],
+        edges: [edge('a', 'a', { old: 2 })],
+      });
+
+      await graphs.replaceData(id, {
+        extra: { fresh: true },
+        nodes: [serviceNode('a', { extra: { fresh: 1 } })],
+        edges: [edge('a', 'a', { fresh: 2 })],
+      });
+      const replaced = await graphs.findWithData(id);
+      expect(replaced?.extra).toEqual({ fresh: true });
+      expect(replaced?.nodes[0]?.extra).toEqual({ fresh: 1 });
+      expect(replaced?.edges[0]?.extra).toEqual({ fresh: 2 });
+
+      await graphs.replaceData(id, { extra: null, nodes: [serviceNode('a')], edges: [edge('a', 'a')] });
+      const cleared = await graphs.findWithData(id);
+      expect(cleared?.extra).toBeNull();
+      expect(cleared?.nodes[0]?.extra).toBeNull();
+      expect(cleared?.edges[0]?.extra).toBeNull();
+    });
+
+    it('are not touched by a rename', async () => {
+      const { id } = await graphs.create(sampleGraph('before'));
+
+      await graphs.rename(id, 'after');
+
+      expect((await graphs.findWithData(id))?.extra).toEqual({ source: 'builders', revision: 3 });
+    });
+
+    it('replaceData fails with NotFoundError for an unknown graph', async () => {
+      await expect(graphs.replaceData(UNKNOWN_ID, { extra: null, nodes: [], edges: [] })).rejects.toMatchObject({
+        status: 404,
+        code: 'GRAPH_NOT_FOUND',
+      });
+    });
+  });
+
   describe('list and findSummary', () => {
     it('is empty when there are no graphs', async () => {
       expect(await graphs.list()).toEqual([]);
@@ -114,7 +225,7 @@ describe('PrismaGraphRepository', () => {
 
     it('lists graphs newest first with their counts, without content', async () => {
       const first = await graphs.create(sampleGraph('first'));
-      const second = await graphs.create({ name: 'second', nodes: [serviceNode('only')], edges: [] });
+      const second = await graphs.create({ name: 'second', extra: null, nodes: [serviceNode('only')], edges: [] });
 
       const list = await graphs.list();
 
@@ -212,6 +323,7 @@ describe('PrismaGraphRepository', () => {
       const { id } = await graphs.create(sampleGraph('keep-name'));
 
       await graphs.replaceData(id, {
+        extra: null,
         nodes: [serviceNode('x'), serviceNode('y')],
         edges: [edge('x', 'y')],
       });
@@ -228,7 +340,7 @@ describe('PrismaGraphRepository', () => {
       const target = await graphs.create(sampleGraph('target'));
       const other = await graphs.create(sampleGraph('other'));
 
-      await graphs.replaceData(target.id, { nodes: [], edges: [] });
+      await graphs.replaceData(target.id, { extra: null, nodes: [], edges: [] });
 
       expect(await graphs.findSummary(other.id)).toMatchObject({ nodeCount: 4, edgeCount: 4 });
     });

@@ -1,5 +1,5 @@
 import cors from 'cors';
-import express, { Router, type Express } from 'express';
+import express, { Router, type Express, type RequestHandler } from 'express';
 import type pino from 'pino';
 import { errorHandler } from './http/middleware/error-handler';
 import { notFound } from './http/middleware/not-found';
@@ -7,6 +7,8 @@ import { requestId } from './http/middleware/request-id';
 import { requestLogger } from './http/middleware/request-logger';
 import { createDocsRouter } from './http/openapi/docs.router';
 import type { OpenApiDocument } from './http/openapi/registry';
+import type { GraphController } from './modules/graphs/graph.controller';
+import { createGraphRouter } from './modules/graphs/graph.router';
 import type { HealthController } from './modules/health/health.controller';
 import { createHealthRouter } from './modules/health/health.router';
 
@@ -18,6 +20,9 @@ export interface AppDependencies {
   corsOrigins: string[];
   openApiDocument: OpenApiDocument;
   healthController: HealthController;
+  graphController: GraphController;
+  /** Multipart parser for graph file uploads (see graphFileUpload). */
+  graphUpload: RequestHandler;
 }
 
 /** Builds the Express app without listening, so tests can drive it with Supertest. */
@@ -39,7 +44,8 @@ export function createApp(deps: AppDependencies): Express {
   app.use('/docs', createDocsRouter(deps.openApiDocument));
 
   const api = Router();
-  // Feature routers (graphs, filters, routes) are mounted here in later tasks.
+  api.use('/graphs', createGraphRouter(deps.graphController, deps.graphUpload));
+  // Filter and route-query routers are mounted here in Task 5.
   app.use(API_PREFIX, api);
 
   app.use(notFound());
