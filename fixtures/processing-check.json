@@ -1,0 +1,168 @@
+{
+  "title": "Online shop - processing check",
+  "owner": { "team": "platform", "contact": "platform@example.com" },
+  "schemaVersion": 2,
+  "nodes": [
+    {
+      "name": "web-frontend",
+      "kind": "service",
+      "language": "typescript",
+      "path": "shop/web-frontend",
+      "publicExposed": true,
+      "team": "storefront",
+      "replicas": 3
+    },
+    {
+      "name": "mobile-bff",
+      "kind": "service",
+      "language": "kotlin",
+      "path": "shop/mobile-bff",
+      "publicExposed": true
+    },
+    {
+      "name": "admin-panel",
+      "kind": "service",
+      "language": "typescript",
+      "path": "shop/admin-panel",
+      "publicExposed": false
+    },
+    {
+      "name": "api-gateway",
+      "kind": "service",
+      "language": "go",
+      "path": "shop/api-gateway"
+    },
+    {
+      "name": "auth-service",
+      "kind": "service",
+      "language": "java",
+      "path": "shop/auth-service",
+      "publicExposed": false,
+      "vulnerabilities": [
+        {
+          "file": "shop/auth-service/src/main/java/auth/TokenParser.java",
+          "severity": "high",
+          "message": "JWT signature is not verified before use",
+          "metadata": { "cwe": "CWE-347", "score": 8.1 }
+        }
+      ]
+    },
+    {
+      "name": "cart-service",
+      "kind": "service",
+      "language": "python",
+      "path": "shop/cart-service",
+      "publicExposed": false
+    },
+    {
+      "name": "order-service",
+      "kind": "service",
+      "language": "java",
+      "path": "shop/order-service",
+      "publicExposed": false,
+      "vulnerabilities": [
+        {
+          "file": "shop/order-service/src/main/java/order/OrderRepository.java",
+          "severity": "medium",
+          "message": "SQL statement built by string concatenation",
+          "metadata": { "cwe": "CWE-89", "score": 6.5 }
+        },
+        {
+          "file": "shop/order-service/pom.xml",
+          "severity": "low",
+          "message": "Outdated logging library",
+          "metadata": { "cwe": "CWE-1104", "score": 3.1 },
+          "scanner": "dependency-check"
+        }
+      ]
+    },
+    {
+      "name": "payment-service",
+      "kind": "service",
+      "language": "java",
+      "path": "shop/payment-service",
+      "publicExposed": false,
+      "vulnerabilities": [
+        {
+          "file": "shop/payment-service/src/main/java/pay/CardVault.java",
+          "severity": "Critical",
+          "message": "Card numbers written to the application log",
+          "metadata": { "cwe": "CWE-532", "score": 9.4 }
+        }
+      ]
+    },
+    {
+      "name": "inventory-service",
+      "kind": "service",
+      "language": "go",
+      "path": "shop/inventory-service",
+      "publicExposed": false
+    },
+    {
+      "name": "notification-service",
+      "kind": "service",
+      "language": "node",
+      "path": "shop/notification-service",
+      "publicExposed": false
+    },
+    {
+      "name": "search-service",
+      "kind": "service",
+      "language": "rust",
+      "path": "shop/search-service",
+      "publicExposed": false
+    },
+    {
+      "name": "recommendation-service",
+      "kind": "service",
+      "language": "python",
+      "path": "shop/recommendation-service",
+      "publicExposed": false
+    },
+    {
+      "name": "orders-db",
+      "kind": "rds",
+      "metadata": { "cloud": "AWS", "engine": "postgres", "version": "15.4" }
+    },
+    {
+      "name": "analytics-dw",
+      "kind": "sql",
+      "metadata": { "cloud": "GCP", "engine": "bigquery" }
+    },
+    {
+      "name": "events-queue",
+      "kind": "sqs",
+      "metadata": { "cloud": "AWS" }
+    },
+    {
+      "name": "session-cache",
+      "kind": "redis",
+      "metadata": { "cloud": "AWS", "engine": "redis", "version": "7.2" }
+    },
+    {
+      "name": "legacy-batch",
+      "kind": "service",
+      "language": "cobol",
+      "path": "shop/legacy-batch",
+      "publicExposed": false
+    }
+  ],
+  "edges": [
+    { "from": "web-frontend", "to": "api-gateway", "protocol": "https" },
+    { "from": "mobile-bff", "to": ["api-gateway", "auth-service"], "protocol": "https" },
+    { "from": "api-gateway", "to": ["auth-service", "cart-service", "search-service"] },
+    { "from": "api-gateway", "to": "cart-service", "timeoutMs": 2000 },
+    { "from": "auth-service", "to": ["user-directory", "session-cache"] },
+    { "from": "cart-service", "to": ["order-service", "session-cache"] },
+    { "from": "order-service", "to": ["payment-service", "orders-db", "events-queue"], "protocol": "grpc" },
+    { "from": "order-service", "to": "orders-db", "pool": "primary" },
+    { "from": "payment-service", "to": ["order-service", "fraud-check"] },
+    { "from": "search-service", "to": ["search-service", "recommendation-service", "session-cache"] },
+    { "from": "recommendation-service", "to": "search-service" },
+    { "from": "events-queue", "to": "notification-service" },
+    { "from": "notification-service", "to": [] },
+    { "from": "external-cron", "to": "inventory-service", "schedule": "*/5 * * * *" },
+    { "from": "inventory-service", "to": "orders-db" },
+    { "from": "admin-panel", "to": ["analytics-dw", "orders-db"] }
+  ]
+}
