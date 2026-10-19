@@ -6,7 +6,7 @@ between services with dynamic filters, such as public entry points, database sin
 
 **Stack:** Node.js · TypeScript · Express 5 · PostgreSQL · Prisma 7 · Zod · OpenAPI/Swagger · pino · Jest · Supertest · Docker Compose
 
-> Status: Task 1 of 5 (foundation). Graph endpoints arrive in the following tasks.
+> Status: Task 2 of 5 done (foundation and data layer). Graph endpoints arrive in the following tasks.
 
 ## Requirements
 
@@ -92,6 +92,9 @@ All tests live under `tests/`:
 
 - `tests/unit` covers pure logic (config, error mapping, validation, services with fake repositories).
 - `tests/integration` covers Supertest API tests and database tests against the Postgres from Docker Compose.
+  They run in a separate `test` schema of the same database, which is dropped and rebuilt from the real
+  migrations at the start of every run, so development data is never touched. Start Postgres first:
+  `docker compose up -d postgres`.
 
 ## API overview
 
@@ -116,7 +119,10 @@ src/
   infrastructure/  Prisma client, pino logger, graceful shutdown
   http/            errors, middleware, OpenAPI registry and docs router
   modules/         feature modules: router → controller → service → repository
+                   (graphs/ and filters/ so far hold repositories only; unit-of-work.ts groups the
+                   repositories that share one transaction)
+  shared/          small cross-module types (JSON)
   graph-engine/    framework-free graph model and route engine (Task 4)
 tests/             unit and integration tests
-prisma/            schema and migrations
+prisma/            schema and migrations (CHECK constraints are hand-written in the init migration)
 ```

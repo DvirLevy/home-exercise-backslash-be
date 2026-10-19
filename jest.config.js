@@ -19,6 +19,14 @@ const shared = {
 module.exports = {
   projects: [
     { ...shared, displayName: 'unit', testMatch: ['<rootDir>/tests/unit/**/*.test.ts'] },
-    { ...shared, displayName: 'integration', testMatch: ['<rootDir>/tests/integration/**/*.test.ts'] },
+    {
+      ...shared,
+      displayName: 'integration',
+      testMatch: ['<rootDir>/tests/integration/**/*.test.ts'],
+      // Recreates the "test" schema and applies the real migrations once per run.
+      globalSetup: '<rootDir>/tests/helpers/global-setup.ts',
+    },
   ],
+  // Integration tests share one database schema and truncate it between tests.
+  maxWorkers: 1,
 };
