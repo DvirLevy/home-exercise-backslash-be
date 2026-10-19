@@ -31,6 +31,10 @@ export function parseDatabaseUrl(databaseUrl: string): ParsedDatabaseUrl {
     : { connectionString: url.toString(), schema };
 }
 
+/**
+ * Builds a NEW client with its own connection pool. Application code must not call this: use
+ * `getPrismaClient`. It is exported for tests, which need separate clients for separate schemas.
+ */
 export function createPrismaClient(databaseUrl: string): PrismaClient {
   const { connectionString, schema } = parseDatabaseUrl(databaseUrl);
   const adapter = schema
@@ -38,4 +42,30 @@ export function createPrismaClient(databaseUrl: string): PrismaClient {
       new PrismaPg({ connectionString, options: `-c search_path=${schema}` }, { schema })
     : new PrismaPg({ connectionString });
   return new PrismaClient({ adapter });
+}
+
+let singleton: { client: PrismaClient; databaseUrl: string } | undefined;
+
+/**
+ * The one PrismaClient of this process. Every repository shares it, so the whole application uses a
+ * single connection pool. The first call creates it; later calls return the same instance.
+ *
+ * @throws if a client already exists for a different DATABASE_URL: a process has one database.
+ */
+export function getPrismaClient(databaseUrl: string): PrismaClient {
+  if (singleton) {
+    if (singleton.databaseUrl !== databaseUrl) {
+      throw new Error('A PrismaClient already exists for a different DATABASE_URL; one process uses one database');
+    }
+    return singleton.client;
+  }
+  singleton = { client: createPrismaClient(databaseUrl), databaseUrl };
+  return singleton.client;
+}
+
+/** Closes the shared client and forgets it, so a later `getPrismaClient` starts fresh. Safe to call twice. */
+export async function disconnectPrisma(): Promise<void> {
+  const current = singleton;
+  singleton = undefined;
+  await current?.client.$disconnect();
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_MAX_ENTRIES } from '../graph-engine/graph-store';
 
 const positiveInt = z.coerce.number().int().positive();
 
@@ -22,6 +23,8 @@ const envSchema = z.object({
   MAX_UPLOAD_BYTES: positiveInt.default(10 * 1024 * 1024),
   MAX_NODES: positiveInt.default(50_000),
   MAX_EDGES: positiveInt.default(500_000),
+  /** Graphs kept in memory for fast queries; the least recently used one is dropped beyond this. */
+  GRAPH_CACHE_MAX_ENTRIES: positiveInt.default(DEFAULT_MAX_ENTRIES),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -47,4 +47,23 @@ describe('architecture', () => {
       expect(forbidden).toEqual([]);
     });
   });
+
+  describe('there is a single PrismaClient per process', () => {
+    const root = join(__dirname, '../..');
+    const files = [...sourceFiles(join(root, 'src')).filter((f) => !f.includes('/generated/')), ...sourceFiles(join(root, 'scripts'))];
+    const where = (pattern: RegExp): string[] =>
+      files.filter((file) => pattern.test(readFileSync(file, 'utf8'))).map((file) => file.slice(root.length + 1)).sort();
+
+    it('only infrastructure/prisma.ts constructs a PrismaClient', () => {
+      expect(where(/new PrismaClient\(/)).toEqual(['src/infrastructure/prisma.ts']);
+    });
+
+    it('application code never calls the factory that builds an extra client', () => {
+      expect(where(/createPrismaClient\(/)).toEqual(['src/infrastructure/prisma.ts']);
+    });
+
+    it('only the entry points that own the process ask for the shared client', () => {
+      expect(where(/getPrismaClient\(/)).toEqual(['scripts/seed.ts', 'src/container.ts', 'src/infrastructure/prisma.ts']);
+    });
+  });
 });

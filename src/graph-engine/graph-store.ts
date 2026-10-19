@@ -5,7 +5,7 @@ export interface GraphStoreOptions {
   maxEntries?: number;
 }
 
-const DEFAULT_MAX_ENTRIES = 50;
+export const DEFAULT_MAX_ENTRIES = 50;
 
 interface PendingLoad<S> {
   promise: Promise<S | null>;
@@ -29,7 +29,8 @@ interface PendingLoad<S> {
 export class GraphStore<S> {
   private readonly entries = new Map<string, S>(); // insertion order = recency, oldest first
   private readonly pending = new Map<string, PendingLoad<S>>();
-  private readonly maxEntries: number;
+  /** Most snapshots kept in memory at once. */
+  readonly maxEntries: number;
 
   constructor(
     private readonly load: SnapshotLoader<S>,

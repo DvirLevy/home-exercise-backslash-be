@@ -17,6 +17,7 @@ describe('loadEnv', () => {
       MAX_UPLOAD_BYTES: 10 * 1024 * 1024,
       MAX_NODES: 50_000,
       MAX_EDGES: 500_000,
+      GRAPH_CACHE_MAX_ENTRIES: 50,
     });
   });
 
@@ -31,6 +32,20 @@ describe('loadEnv', () => {
     expect(env.PORT).toBe(8080);
     expect(env.MAX_NODES).toBe(10);
     expect(env.CORS_ORIGINS).toEqual(['http://a.test', 'http://b.test']);
+  });
+
+  describe('GRAPH_CACHE_MAX_ENTRIES', () => {
+    it('is read from the environment', () => {
+      expect(loadEnv({ ...validEnv, GRAPH_CACHE_MAX_ENTRIES: '7' }).GRAPH_CACHE_MAX_ENTRIES).toBe(7);
+    });
+
+    it('defaults to 50 when it is not set', () => {
+      expect(loadEnv(validEnv).GRAPH_CACHE_MAX_ENTRIES).toBe(50);
+    });
+
+    it.each(['0', '-3', '1.5', 'many', ''])('rejects %p', (value) => {
+      expect(() => loadEnv({ ...validEnv, GRAPH_CACHE_MAX_ENTRIES: value })).toThrow(/GRAPH_CACHE_MAX_ENTRIES/);
+    });
   });
 
   it('fails when DATABASE_URL is missing', () => {

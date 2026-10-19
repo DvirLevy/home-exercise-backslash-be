@@ -50,7 +50,7 @@ export function createTestApp({
   graphCache,
 }: TestAppOptions = {}): Express {
   const base: Persistence = persistence ?? {
-    repositories: { health: healthyDatabase, graphs: unavailable('graphs') },
+    repositories: { health: healthyDatabase, graphs: unavailable('graphs'), filters: unavailable('filters') },
     unitOfWork: unavailable('unitOfWork'),
   };
 
