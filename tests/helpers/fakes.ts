@@ -85,3 +85,29 @@ export function recordingCache(unitOfWork: FakeUnitOfWork): GraphCache & { calls
   const calls: Array<{ id: string; afterCommit: boolean }> = [];
   return { calls, invalidate: (id) => void calls.push({ id, afterCommit: unitOfWork.committed }) };
 }
+
+// --- filters and query loading -----------------------------------------------------------------
+
+export function filterRecord(key: string, definition: unknown, overrides: Partial<import('../../src/modules/filters/filter.types').FilterRecord> = {}) {
+  return {
+    id: `id-${key}`,
+    graphId: '11111111-1111-1111-1111-111111111111',
+    key,
+    description: null,
+    definition: definition as import('../../src/shared/json').JsonValue,
+    definitionVersion: 1,
+    isBuiltin: false,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+    ...overrides,
+  } satisfies import('../../src/modules/filters/filter.types').FilterRecord;
+}
+
+export const silentTestLogger = {
+  fatal: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+  info: jest.fn(),
+  debug: jest.fn(),
+  child: () => silentTestLogger,
+} as unknown as import('../../src/infrastructure/logger').Logger & { warn: jest.Mock };

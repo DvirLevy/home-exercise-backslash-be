@@ -24,6 +24,14 @@ function isBodyParserError(err: unknown): err is { type: string; status: number 
   return typeof err === 'object' && err !== null && 'type' in err && 'status' in err;
 }
 
+/** One detail per problem; an unrecognized property is reported at its own path, not at its parent's. */
+function issueDetails(issue: ZodError['issues'][number]): ErrorDetail[] {
+  if (issue.code === 'unrecognized_keys') {
+    return issue.keys.map((key) => ({ path: [...issue.path, key].join('.'), message: `Unrecognized property "${key}"` }));
+  }
+  return [{ path: issue.path.join('.'), message: issue.message }];
+}
+
 export function toHttpError(err: unknown): HttpErrorShape {
   if (err instanceof AppError) {
     const body: ErrorBody = { error: { code: err.code, message: err.message } };
@@ -42,9 +50,7 @@ export function toHttpError(err: unknown): HttpErrorShape {
             total > MAX_VALIDATION_DETAILS
               ? `Request validation failed (showing the first ${MAX_VALIDATION_DETAILS} of ${total} issues)`
               : 'Request validation failed',
-          details: err.issues
-            .slice(0, MAX_VALIDATION_DETAILS)
-            .map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
+          details: err.issues.flatMap(issueDetails).slice(0, MAX_VALIDATION_DETAILS),
         },
       },
     };

@@ -47,6 +47,22 @@ describe('toHttpError', () => {
     );
   });
 
+  it('reports an unrecognized property at its own path, one detail per property', () => {
+    const parsed = z.strictObject({ name: z.string(), inner: z.strictObject({ a: z.number() }) }).safeParse({ name: 'x', extra: 1, inner: { a: 1, b: 2, c: 3 } });
+    if (parsed.success) throw new Error('expected a validation failure');
+
+    const { body } = toHttpError(parsed.error);
+
+    expect(body.error.details).toHaveLength(3);
+    expect(body.error.details).toEqual(
+      expect.arrayContaining([
+        { path: 'extra', message: 'Unrecognized property "extra"' },
+        { path: 'inner.b', message: 'Unrecognized property "b"' },
+        { path: 'inner.c', message: 'Unrecognized property "c"' },
+      ]),
+    );
+  });
+
   it('caps the details of a ZodError and says how many issues there were', () => {
     const parsed = z.array(z.number()).safeParse(Array.from({ length: 250 }, () => 'x'));
     if (parsed.success) throw new Error('expected a validation failure');
