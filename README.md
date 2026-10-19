@@ -1,0 +1,122 @@
+# Graph Analysis Platform — Backend
+
+Backend for the Backslash Security home assignment. Users upload JSON files that describe a
+microservice architecture as a directed graph (nodes, edges, vulnerabilities) and query the routes
+between services with dynamic filters, such as public entry points, database sinks and vulnerable nodes.
+
+**Stack:** Node.js · TypeScript · Express 5 · PostgreSQL · Prisma 7 · Zod · OpenAPI/Swagger · pino · Jest · Supertest · Docker Compose
+
+> Status: Task 1 of 5 (foundation). Graph endpoints arrive in the following tasks.
+
+## Requirements
+
+- Node.js 22 or later (developed on Node 26)
+- Docker with Docker Compose
+
+## Configuration: the `.env` file
+
+All configuration lives in a single `.env` file in the project root. There is no other env file,
+so create it from the block below:
+
+```dotenv
+NODE_ENV=development
+PORT=3000
+LOG_LEVEL=info
+
+POSTGRES_USER=backslash
+POSTGRES_PASSWORD=backslash
+POSTGRES_DB=graphs
+POSTGRES_PORT=5432
+
+# Host is "localhost" for a locally running backend; docker compose overrides it to "postgres".
+DATABASE_URL=postgresql://backslash:backslash@localhost:5432/graphs
+
+CORS_ORIGINS=http://localhost:5173
+MAX_UPLOAD_BYTES=10485760
+MAX_NODES=50000
+MAX_EDGES=500000
+```
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `NODE_ENV` | no | `development` | `development`, `test` or `production` |
+| `PORT` | no | `3000` | HTTP port |
+| `LOG_LEVEL` | no | `info` | pino level (`fatal` … `trace`, `silent`) |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | for Docker | – | Used by the Postgres container and by compose to build the backend's `DATABASE_URL` |
+| `POSTGRES_PORT` | no | `5432` | Host port the Postgres container is published on |
+| `DATABASE_URL` | **yes** | – | Connection string used by the backend, Prisma CLI and tests |
+| `CORS_ORIGINS` | no | `http://localhost:5173` | Comma-separated list of allowed frontend origins |
+| `MAX_UPLOAD_BYTES` | no | `10485760` (10 MB) | Largest accepted graph file |
+| `MAX_NODES` / `MAX_EDGES` | no | `50000` / `500000` | Largest accepted graph |
+
+Everything is validated with Zod at startup, and the server refuses to start with a list of every invalid variable.
+If the password contains URL-special characters, URL-encode it inside `DATABASE_URL`.
+
+## Running
+
+```bash
+npm install
+
+# Option A: everything in Docker
+docker compose up --build
+
+# Option B: database in Docker, backend locally with hot reload
+docker compose up -d postgres
+npm run dev
+
+# Backend container alone (expects a reachable database)
+docker compose up --no-deps backend
+```
+
+- API: `http://localhost:3000/api/v1`
+- Health: `http://localhost:3000/health`
+- Swagger UI: `http://localhost:3000/docs` (raw spec at `/docs/openapi.json`)
+
+The backend container runs `prisma migrate deploy` before starting, and it waits until the Postgres healthcheck passes.
+
+## Scripts
+
+| Script | Description |
+|---|---|
+| `npm run dev` | Start with hot reload (`tsx watch`) |
+| `npm run build` / `npm start` | Compile to `dist/` / run the compiled server |
+| `npm run typecheck` | `tsc --noEmit` over sources and tests |
+| `npm test` | All tests (unit and integration) |
+| `npm run test:unit` | Unit tests only, no database needed |
+| `npm run test:integration` | API and database tests; Postgres must be running |
+| `npm run prisma:migrate` / `npm run prisma:deploy` | Create a migration (dev) / apply migrations |
+
+## Tests
+
+All tests live under `tests/`:
+
+- `tests/unit` covers pure logic (config, error mapping, validation, services with fake repositories).
+- `tests/integration` covers Supertest API tests and database tests against the Postgres from Docker Compose.
+
+## API overview
+
+| Method | Path | Status |
+|---|---|---|
+| GET | `/health` | ✅ |
+| GET | `/docs`, `/docs/openapi.json` | ✅ |
+| POST / GET / PUT / PATCH / DELETE | `/api/v1/graphs[/:id]` | Task 3 |
+| GET / POST / PUT / DELETE | `/api/v1/graphs/:id/filters[/:key]`, `POST …/filters/preview` | Task 5 |
+| GET | `/api/v1/graphs/:id/routes?start=&end=&through=` | Task 5 |
+
+Errors always use the format `{ "error": { "code", "message", "details?" } }`.
+
+## Project structure
+
+```
+src/
+  server.ts        entry point: env → container → listen → graceful shutdown
+  app.ts           Express app factory (no listen; used by Supertest)
+  container.ts     composition root (manual dependency injection)
+  config/          Zod-validated environment
+  infrastructure/  Prisma client, pino logger, graceful shutdown
+  http/            errors, middleware, OpenAPI registry and docs router
+  modules/         feature modules: router → controller → service → repository
+  graph-engine/    framework-free graph model and route engine (Task 4)
+tests/             unit and integration tests
+prisma/            schema and migrations
+```

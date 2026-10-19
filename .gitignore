@@ -1,0 +1,79 @@
+# Dependencies
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Generated Prisma client (created by `prisma generate`)
+src/generated/
+
+# Environment: the single .env file holds secrets; never commit it or any variant of it
+.env
+.env.*
+
+# Tests and coverage
+coverage/
+.nyc_output/
+junit.xml
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Runtime data
+*.pid
+*.seed
+*.pid.lock
+
+# Caches
+.cache/
+.eslintcache
+.stylelintcache
+.parcel-cache/
+.turbo/
+.tmp/
+tmp/
+temp/
+
+# Local database files (e.g. SQLite or dumps used while debugging)
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+
+# Archives and local backups
+*.tgz
+*.bak
+*.orig
+*.rej
+
+# Editors and IDEs
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Claude Code local files (CLAUDE.md itself is meant to be shared)
+.claude/settings.local.json
+.claude/scratchpad/

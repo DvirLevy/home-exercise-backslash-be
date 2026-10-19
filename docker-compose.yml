@@ -1,0 +1,31 @@
+name: graph-analysis
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    env_file: .env # uses POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: .
+    env_file: .env
+    environment:
+      # Same credentials as .env, but the database host inside the compose network is "postgres".
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      NODE_ENV: production
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
