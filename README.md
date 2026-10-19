@@ -6,7 +6,7 @@ between services with dynamic filters, such as public entry points, database sin
 
 **Stack:** Node.js · TypeScript · Express 5 · PostgreSQL · Prisma 7 · Zod · OpenAPI/Swagger · pino · Jest · Supertest · Docker Compose
 
-> Status: Tasks 1-3 of 5 done (foundation, data layer, graph upload and CRUD). Filters, route queries and the graph engine arrive in the following tasks.
+> Status: Tasks 1-4 of 5 done (foundation, data layer, graph upload and CRUD, graph engine and rule language). The filter and route-query endpoints (Task 5) arrive next.
 
 ## Requirements
 
@@ -133,6 +133,24 @@ curl -F "name=Train Ticket" -F "file=@fixtures/train-ticket-be.json" http://loca
 - Graph names are required but need not be unique.
 - Every new graph gets three read-only built-in filters: `public`, `sink` (kind `rds` or `sql`) and `vulnerable`.
 
+### Filters and route queries (engine ready, endpoints in Task 5)
+
+Filters are **data**: a JSON rule tree stored per graph and compiled to a predicate when the graph is loaded. A rule is exactly one of:
+
+```jsonc
+{ "all": [Rule, ...] }   { "any": [Rule, ...] }   { "not": Rule }
+{ "field": "kind", "op": "in", "value": ["rds", "sql"] }
+{ "field": "vulnerabilities", "op": "some", "where": { "field": "severity", "op": "eq", "value": "high" } }
+```
+
+- **Fields:** `name`, `kind`, `language`, `path`, `publicExposed`, `metadata.<key>`, `extra.<key>` (dotted paths go deeper) and `vulnerabilities`. Inside `where`, any field of the vulnerability, including unknown ones.
+- **Operators:** `eq`, `neq`, `in`, `notIn`, `exists`, `notExists`, `contains` (case-sensitive substring), `gt`, `gte`, `lt`, `lte` (numbers only), and `some` (only on `vulnerabilities`).
+- **Missing means absent or null.** `eq`, `in`, `exists`, `contains` and the numeric operators are false for a missing field; `neq`, `notIn` and `notExists` are their exact complements, so they are true.
+- Placeholder nodes never match any filter. Rules are bounded (depth 8, 100 parts, 1,000 values per list) and validated with the exact path of every problem.
+- Built-in filters (read-only): `public` (`publicExposed` is `true`), `sink` (`kind` is `rds` or `sql`, not `sqs`), `vulnerable` (at least one vulnerability).
+
+A route query names up to three roles, each built from filters (`or` / `and` / `not`): `start`, `end` and `through`. The result is the **subgraph of every node and edge that lies on at least one route** starting at a `start` node, ending at an `end` node and passing through a `through` node (a start or end node counts). Routes are walks, so a route may go round a cycle; a role left out is unconstrained, and no role at all returns the whole graph. The search is linear in the size of the graph (up to four breadth-first searches, no recursion): 100,000 nodes and 500,000 edges take about a quarter of a second.
+
 ### Concurrency
 
 Each graph has a `version` that grows with every change to its nodes, edges or filters. It is returned as the `ETag`.
@@ -153,7 +171,7 @@ src/
                    (graphs/ is complete; filters/ so far holds repositories and the built-in filters;
                    unit-of-work.ts groups the repositories that share one transaction)
   shared/          small cross-module types (JSON)
-  graph-engine/    framework-free graph model and route engine (Task 4)
+  graph-engine/    framework-free in-memory graph, filter index, route search and snapshot cache
 fixtures/         train-ticket-be.json, the sample graph
 scripts/          seed script
 tests/             unit and integration tests
